@@ -1,33 +1,26 @@
-# server/models.py
-from pydantic import BaseModel
-from typing import List
+# server/models.py (SQLAlchemy Version)
+from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy.orm import relationship
+from database import Base
 
-# --- Core Data Structures ---
+# SQLAlchemy model for the 'stores' table
+class Store(Base):
+    __tablename__ = "stores"
 
-# Represents a single item in a store's inventory (price per unit)
-class Item(BaseModel):
-    name: str
-    price: float
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    location = Column(String)
 
-# Represents a store with its inventory
-class Store(BaseModel):
-    id: int
-    name: str
-    items: List[Item]
+    # This creates the one-to-many relationship
+    items = relationship("Item", back_populates="store")
 
+# SQLAlchemy model for the 'items' table
+class Item(Base):
+    __tablename__ = "items"
 
-# --- API Request/Response Models ---
-
-# Represents an item in the user's grocery list, WITH quantity
-class RequestedItem(BaseModel):
-    name: str
-    quantity: int
-
-# The structure of the request body for the /calculate endpoint
-class CalculationRequest(BaseModel):
-    items: List[RequestedItem]
-
-# The structure of the response from the /calculate endpoint
-class CalculationResponse(BaseModel):
-    store_name: str
-    total_cost: float
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    price = Column(Float)
+    
+    store_id = Column(Integer, ForeignKey("stores.id"))
+    store = relationship("Store", back_populates="items")

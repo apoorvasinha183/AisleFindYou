@@ -1,14 +1,30 @@
-# docker-compose.yml
+# docker-compose.yml (Upgraded with PostgreSQL)
 version: '3.8'
+
 services:
+  db:
+    image: postgres:15-alpine  # A specific, lightweight version of Postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/ # Persists data even if container stops
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=aislefindyoudb
+    ports:
+      - "5432:5432" # So you can connect to the DB from your Mac if needed
+
   server:
     build: ./server
     ports:
       - "8000:8000"
     volumes:
-      # This links your local 'server' folder to the '/app' folder inside the container
-      # Any code change you make locally will be reflected inside the container instantly
       - ./server:/app
+    environment:
+      # This URL is how our FastAPI app will find the database.
+      # 'db' is the service name from above.
+      - DATABASE_URL=postgresql://user:password@db/aislefindyoudb
+    depends_on:
+      - db # Tells Docker to start the 'db' service BEFORE the 'server' service
 
   client:
     build: ./client
@@ -19,3 +35,7 @@ services:
       - /app/node_modules
     depends_on:
       - server
+
+# Defines the named volume we used in the 'db' service
+volumes:
+  postgres_data:

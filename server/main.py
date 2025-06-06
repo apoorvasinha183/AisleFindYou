@@ -1,72 +1,76 @@
-# server/main.py (Refactored Version)
-
-from fastapi import FastAPI
+# server/main.py (Database-driven Version)
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+import pydantic_models as pydantic # We'll create this file next
+import models
+from database import SessionLocal, engine
+from sqlalchemy import func
 
-# Import all our models from the new models.py file
-from models import Store, Item, CalculationRequest, CalculationResponse
+# This command creates the database tables if they don't exist
+models.Base.metadata.create_all(bind=engine)
 
-# --- Mock Database (This remains here for now) ---
-mock_db: list[Store] = [
-    Store(id=1, name="Kroger on Ponce", items=[
-        Item(name="milk", price=3.50),
-        Item(name="eggs", price=2.75),
-        Item(name="bread", price=2.50),
-        Item(name="chicken", price=8.99),
-    ]),
-    Store(id=2, name="Publix at Ansley Mall", items=[
-        Item(name="milk", price=3.60),
-        Item(name="eggs", price=2.50), # Cheaper eggs!
-        Item(name="bread", price=2.80),
-        Item(name="apples", price=4.20),
-    ]),
-    Store(id=3, name="Trader Joe's on Monroe", items=[
-        Item(name="milk", price=3.75),
-        Item(name="eggs", price=2.95),
-        Item(name="bananas", price=1.99),
-        Item(name="chicken", price=7.50), # Cheaper chicken!
-    ]),
-]
-
-# --- FastAPI App Initialization ---
 app = FastAPI()
 
+# --- CORS and Database Session Management ---
 origins = ["http://localhost:3000"]
 app.add_middleware(
     CORSMiddleware, allow_origins=origins, allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- API Endpoints ---
-@app.get("/api/stores", response_model=list[Store])
-def get_stores():
-    return mock_db
+# Dependency to get a DB session for each request
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.post("/api/calculate", response_model=CalculationResponse)
-def calculate_best_store(request: CalculationRequest):
-    """
-    Receives a list of items with quantities and calculates the cheapest store.
-    """
+# --- API Endpoints using the Database ---
+@app.post("/api/calculate", response_model=pydantic.CalculationResponse)
+def calculate_best_store(request: pydantic.CalculationRequest, db: Session = Depends(get_db)):
+    stores = db.query(models.Store).all()
     best_store_info = {"name": "No store found", "cost": float('inf')}
 
-    for store in mock_db:
+    for store in stores:
         current_store_cost = 0
-        items_found_in_this_store = 0
+        items_found = 0
         store_inventory = {item.name: item.price for item in store.items}
 
-        # The core logic is now updated to handle quantity!
         for requested_item in request.items:
             if requested_item.name in store_inventory:
-                # NEW: Multiply price by quantity
                 item_cost = store_inventory[requested_item.name] * requested_item.quantity
                 current_store_cost += item_cost
-                items_found_in_this_store += 1
+                items_found += 1
         
-        if items_found_in_this_store > 0 and current_store_cost < best_store_info["cost"]:
+        if items_found > 0 and current_store_cost < best_store_info["cost"]:
             best_store_info["name"] = store.name
             best_store_info["cost"] = current_store_cost
     
-    return CalculationResponse(
+    return pydantic.CalculationResponse(
         store_name=best_store_info["name"],
         total_cost=round(best_store_info["cost"], 2)
     )
+# -- Autocomplete ---
+@app.get("/api/items/autocomplete", response_model=list[str])
+def autocomplete_items(query: str, db: Session = Depends(get_db)):
+    """
+    Provides a list of distinct item names that start with the user's query.
+    This is case-insensitive.
+    """
+    if not query:
+        return []
+
+    # Query the database for distinct item names that match the query.
+    # .ilike() provides case-insensitive matching.
+    # We limit the results to 10 to avoid sending huge lists.
+    search_query = f"{query}%"
+    items = db.query(models.Item.name)\
+              .filter(models.Item.name.ilike(search_query))\
+              .distinct()\
+              .limit(10)\
+              .all()
+    
+    # The query returns a list of tuples, so we extract the first element of each tuple.
+    return [item[0] for item in items] 
