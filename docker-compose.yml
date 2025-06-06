@@ -1,0 +1,21 @@
+# docker-compose.yml
+version: '3.8'
+services:
+  server:
+    build: ./server
+    ports:
+      - "8000:8000"
+    volumes:
+      # This links your local 'server' folder to the '/app' folder inside the container
+      # Any code change you make locally will be reflected inside the container instantly
+      - ./server:/app
+
+  client:
+    build: ./client
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      - server
